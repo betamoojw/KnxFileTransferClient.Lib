@@ -229,11 +229,13 @@ public class FileTransferClient
 
         sequence = start_sequence;
 
-        if(sequence != 1)
+        if (sequence != 1)
         {
             stream.Seek((sequence - 1) * (length - 3), SeekOrigin.Begin);
             procPos = (sequence - 1) * (length - 3);
         }
+        
+        PrintInfo?.Invoke("Dateigröße: " + procSize + " bytes");
 
         if(res.Data[0] != 0x00)
             throw new FileTransferException(res.Data[0]);
@@ -347,8 +349,7 @@ public class FileTransferClient
             throw new FileTransferException(res.Data[0]);
 
         procSize = BitConverter.ToInt32(res.Data.Skip(1).Take(4).Reverse().ToArray(), 0);
-        PrintInfo?.Invoke("Dateigröße alt: " + BitConverter.ToInt32(res.Data.Skip(1).Take(4).ToArray(), 0) + " bytes");
-        PrintInfo?.Invoke("Dateigröße neu: " + procSize + " bytes");
+        PrintInfo?.Invoke("Dateigröße: " + procSize + " bytes");
 
         int errorCount = 0;
         while(true)
