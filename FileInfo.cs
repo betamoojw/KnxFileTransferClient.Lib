@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Text;
 using Kaenx.Konnect.Classes;
-using Kaenx.Konnect.Messages.Response;
 
 namespace KnxFileTransferClient.Lib;
 
