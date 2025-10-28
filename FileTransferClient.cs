@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Text;
+using System.Management.Automation;
 using Kaenx.Konnect.Classes;
 using Kaenx.Konnect.EMI.DataMessages;
 using Kaenx.Konnect.Exceptions;
@@ -10,6 +11,7 @@ public class FileTransferClient
 {
     private BusDevice device;
     private const int ObjectIndex = 159;
+    private const int packageOverhead = 6;
 
     public enum FtmCommands
     {
@@ -102,20 +104,20 @@ public class FileTransferClient
         }
     }
 
-    public async Task<string> CheckVersion()
+    public async Task<SemanticVersion> CheckVersion()
     {
         FunctionPropertyStateResponse res = await device.InvokeFunctionProperty(ObjectIndex, (int)FtmCommands.GetVersion);
         if(res == null)
             throw new Exception("No response for Version Request");
         int major = BitConverter.ToInt16(new byte[] { res.Data[1], res.Data[0]});
         int minor = BitConverter.ToInt16(new byte[] { res.Data[3], res.Data[2]});
-        int build = BitConverter.ToInt16(new byte[] { res.Data[5], res.Data[4]});
-        string result = $"{major}.{minor}.{build}";
+        int build = BitConverter.ToInt16(new byte[] { res.Data[5], res.Data[4] });
+        SemanticVersion version = new SemanticVersion(major, minor, build);
 
         if(major != GetVersionMajor())
-            throw new Exception("Incompatible Remote MajorVersion: " + result);
+            throw new Exception("Incompatible Remote MajorVersion: " + version);
 
-        return result;
+        return version;
     }
 
     public async Task Format()
@@ -203,16 +205,23 @@ public class FileTransferClient
         procTime = DateTime.Now;
         short sequence = 0;
 
-        int maxCounter = (int)Math.Ceiling((double)stream.Length / (length - 3));
+        int payloadSize = length - packageOverhead;
+
+        int maxCounter = (int)Math.Ceiling((double)stream.Length / payloadSize);
         int minNeeded = (int)Math.Ceiling((double)stream.Length / 0xFFFF);
         if(maxCounter > 0xFFFF)
             throw new Exception($"File can not be transfered with the given pkg size (min {minNeeded + 3}; is {length})");
 
         bool canResume = await CheckFeature(FileTransferClient.FtmFeatures.Resume);
+        SemanticVersion version = await CheckVersion();
 
         List<byte> data = new List<byte>();
         data.AddRange(BitConverter.GetBytes(sequence));
-        data.Add((byte)length);
+        if (version <= new SemanticVersion(0, 1, 3))
+            data.Add((byte)(length - 3));
+        else
+            data.Add((byte)(length - packageOverhead));
+
         if(canResume)
         {
             data.Add((byte)(start_sequence != 1 ? 1 : 0));
@@ -230,8 +239,8 @@ public class FileTransferClient
 
         if (sequence != 1)
         {
-            stream.Seek((sequence - 1) * (length - 3), SeekOrigin.Begin);
-            procPos = (sequence - 1) * (length - 3);
+            stream.Seek((sequence - 1) * payloadSize, SeekOrigin.Begin);
+            procPos = (sequence - 1) * payloadSize;
         }
         
         PrintInfo?.Invoke("Dateigröße: " + procSize + " bytes");
@@ -246,8 +255,8 @@ public class FileTransferClient
         {
             if(errorCount == 0)
             {
-                byte[] buffer = new byte[length - 3];
-                readed = stream.Read(buffer, 0, length - 3);
+                byte[] buffer = new byte[payloadSize];
+                readed = stream.Read(buffer, 0, payloadSize);
 
                 if(readed == 0)
                     break;
