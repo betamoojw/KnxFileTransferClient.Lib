@@ -4,6 +4,7 @@ using System.Management.Automation;
 using Kaenx.Konnect.Classes;
 using Kaenx.Konnect.EMI.DataMessages;
 using Kaenx.Konnect.Exceptions;
+using System.Reflection.Metadata;
 
 namespace KnxFileTransferClient.Lib;
 
@@ -270,10 +271,10 @@ public class FileTransferClient
             try
             {
                 res = await device.InvokeFunctionProperty(ObjectIndex, (int)FtmCommands.FileUpload, data.ToArray());
-                if(res == null)
+                if (res == null)
                     throw new Exception("No response for FileUpload Request");
 
-                if(res.Data[0] != 0x00)
+                if (res.Data[0] != 0x00)
                     throw new FileTransferException(res.Data[0]);
 
                 int crcreq = CRC16.Get(data.ToArray());
@@ -282,27 +283,38 @@ public class FileTransferClient
                 if (crcreq != crcresp)
                     throw new Exception($"Falscher CRC (Req: {crcreq:X4} / Res: {crcresp:X4})");
             }
-            catch(FileTransferException ex)
+            catch (FileTransferException ex)
             {
                 throw new Exception(ex.Message, ex);
             }
-            catch(DeviceNotConnectedException ex)
+            catch (DeviceNotConnectedException ex)
             {
                 errorCount++;
                 OnError?.Invoke(ex);
-                if(errorCount > 3)
+                if (errorCount > 3)
                     throw new Exception("To many errors");
-                    
+
                 await device.Connect();
                 continue;
             }
-            catch(Exception ex) 
+            catch (InterfaceException ex)
+            {
+                errorCount++;
+                OnError?.Invoke(ex);
+
+                if (errorCount > 3)
+                    throw new Exception("To many errors");
+                PrintInfo?.Invoke("Warte 3s...");
+                await Task.Delay(3000);
+                continue;
+            }
+            catch (Exception ex)
             {
                 errorCount++;
 
                 OnError?.Invoke(ex);
 
-                if(errorCount > 3)
+                if (errorCount > 3)
                     throw new Exception("To many errors");
 
                 continue;
