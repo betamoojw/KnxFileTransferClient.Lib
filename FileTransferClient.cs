@@ -297,6 +297,17 @@ public class FileTransferClient
                 await device.Connect();
                 continue;
             }
+            catch (InterfaceNotConnectedException ex)
+            {
+                errorCount++;
+                OnError?.Invoke(ex);
+                if (errorCount > 3)
+                    throw new Exception("To many errors");
+
+                PrintInfo?.Invoke("Interface neu verbinden...");
+                await device.InterfaceReset();
+                continue;
+            }
             catch (InterfaceException ex)
             {
                 errorCount++;
@@ -304,6 +315,7 @@ public class FileTransferClient
 
                 if (errorCount > 3)
                     throw new Exception("To many errors");
+
                 PrintInfo?.Invoke("Warte 3s...");
                 await Task.Delay(3000);
                 continue;
