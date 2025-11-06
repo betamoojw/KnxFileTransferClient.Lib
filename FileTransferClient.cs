@@ -211,7 +211,7 @@ public class FileTransferClient
         int maxCounter = (int)Math.Ceiling((double)stream.Length / payloadSize);
         int minNeeded = (int)Math.Ceiling((double)stream.Length / 0xFFFF);
         if(maxCounter > 0xFFFF)
-            throw new Exception($"File can not be transfered with the given pkg size (min {minNeeded + 3}; is {length})");
+            throw new Exception($"File can not be transfered with the given pkg size (min {minNeeded + 6}; is {length})");
 
         bool canResume = await CheckFeature(FileTransferClient.FtmFeatures.Resume);
         SemanticVersion version = await CheckVersion();
@@ -277,15 +277,30 @@ public class FileTransferClient
                 if (res.Data[0] != 0x00)
                     throw new FileTransferException(res.Data[0]);
 
+                int respSeq = BitConverter.ToUInt16(new byte[] { res.Data[2], res.Data[1] });
+                if (respSeq != sequence)
+                    throw new SequenceMissmatchException($"Falsche Sequenz (Req: {sequence:X4} / Res: {respSeq:X4})");
+
                 int crcreq = CRC16.Get(data.ToArray());
                 int crcresp = (res.Data[3] << 8) | res.Data[4];
 
                 if (crcreq != crcresp)
-                    throw new Exception($"Falscher CRC (Req: {crcreq:X4} / Res: {crcresp:X4})");
+                    throw new Exception($"Falscher CRC (Req: {crcreq:X4} / Res: {crcresp:X4}) [{sequence:X4}]");
             }
             catch (FileTransferException ex)
             {
                 throw new Exception(ex.Message, ex);
+            }
+            catch (SequenceMissmatchException ex)
+            {
+                errorCount++;
+                OnError?.Invoke(ex);
+                if (errorCount > 3)
+                    throw new Exception("To many errors");
+
+                PrintInfo?.Invoke("Warte 3s...");
+                await Task.Delay(3000);
+                continue;
             }
             catch (DeviceNotConnectedException ex)
             {
